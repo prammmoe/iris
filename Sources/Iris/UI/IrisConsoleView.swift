@@ -68,13 +68,28 @@ struct IrisConsoleView: View {
                 }
                 .background(IrisConsoleColor.groupedBackground)
             }
-            .navigationTitle("")
+            .navigationTitle("Requests")
             .toolbar {
-                ToolbarItem {
-                    Button("Clear") {
-                        Iris.clear()
+                #if canImport(UIKit)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        Iris.dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
                     }
+                    .accessibilityLabel("Close")
                 }
+                #endif
+                
+                #if canImport(UIKit)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    clearButton
+                }
+                #else
+                ToolbarItem {
+                    clearButton
+                }
+                #endif
             }
         }
         .task {
@@ -84,6 +99,15 @@ struct IrisConsoleView: View {
                 transactions = newTransactions
             }
         }
+    }
+    
+    private var clearButton: some View {
+        Button {
+            Iris.clear()
+        } label: {
+            Image(systemName: "trash")
+        }
+        .accessibilityLabel("Clear")
     }
     
     private var controlsView: some View {
@@ -185,90 +209,78 @@ struct IrisTransactionRowView: View {
     let transaction: IrisTransaction
     
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            statusBadge
+        HStack(spacing: 0) {
+            statusColumn
             
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(transaction.url.absoluteString)
+                    .font(.caption)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                HStack(spacing: 18) {
                     Text(transaction.method)
-                        .font(.caption.bold())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
                     
-                    Text(transaction.url.host ?? "-")
+                    Text(transaction.irisContentType)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                     
                     Spacer(minLength: 8)
                     
-                    Text(transaction.irisTimestampText)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                
-                Text(pathText)
-                    .font(.caption)
-                    .lineLimit(2)
-                
-                HStack(spacing: 10) {
-                    if let duration = transaction.duration {
-                        Text(String(format: "%.0f ms", duration * 1_000))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundColor(.secondary)
-                    }
-                    
                     if let byteCount = transaction.responseBody?.count {
                         Text("\(byteCount) B")
                             .font(.caption2.monospacedDigit())
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
                 }
+                
+                if transaction.state == .failed,
+                   let error = transaction.errorDescription {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
-            
-            Image(systemName: "chevron.right")
-                .font(.body.weight(.semibold))
-                .foregroundColor(IrisConsoleColor.disclosure)
-                .padding(.top, 20)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .frame(minHeight: 64)
         .background(IrisConsoleColor.background)
         .overlay(alignment: .bottom) {
-            Divider()
-                .padding(.leading, 84)
+            Rectangle()
+                .fill(IrisConsoleColor.separator)
+                .frame(height: 1)
         }
     }
     
-    private var statusBadge: some View {
-        Text(transaction.irisStatusText)
-            .font(.caption.bold().monospacedDigit())
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .frame(width: 56, height: 42)
-            .background(transaction.irisStatusColor)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-    
-    private var pathText: String {
-        var components = URLComponents(
-            url: transaction.url,
-            resolvingAgainstBaseURL: false
-        )
-        components?.scheme = nil
-        components?.host = nil
-        components?.port = nil
-        
-        let path = components?.string
-        
-        if let path,
-           !path.isEmpty {
-            return path
+    private var statusColumn: some View {
+        VStack(spacing: 4) {
+            Text(transaction.irisListTimeText)
+                .font(.caption.bold().monospacedDigit())
+                .foregroundColor(.white)
+                .lineLimit(1)
+            
+            Text(transaction.irisListDurationText)
+                .font(.caption.monospacedDigit())
+                .foregroundColor(.white.opacity(0.72))
+                .lineLimit(1)
+            
+            Text(transaction.irisStatusText)
+                .font(.caption2.bold().monospacedDigit())
+                .foregroundColor(.white.opacity(0.9))
+                .lineLimit(1)
         }
-        
-        return transaction.url.absoluteString
+        .frame(width: 68)
+        .frame(maxHeight: .infinity)
+        .background(transaction.irisStatusColor)
     }
 }
 
@@ -309,6 +321,26 @@ enum IrisConsoleColor {
         #endif
     }
     
+    static var detailBackground: Color {
+        #if canImport(UIKit)
+        return Color(.systemGray6)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .textBackgroundColor)
+        #else
+        return Color.gray.opacity(0.06)
+        #endif
+    }
+    
+    static var detailSegmentBackground: Color {
+        #if canImport(UIKit)
+        return Color(.systemGray3)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .controlBackgroundColor)
+        #else
+        return Color.gray.opacity(0.2)
+        #endif
+    }
+    
     static var disclosure: Color {
         #if canImport(UIKit)
         return Color(.tertiaryLabel)
@@ -316,6 +348,16 @@ enum IrisConsoleColor {
         return Color(nsColor: .tertiaryLabelColor)
         #else
         return Color.gray
+        #endif
+    }
+    
+    static var separator: Color {
+        #if canImport(UIKit)
+        return Color(.separator)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .separatorColor)
+        #else
+        return Color.gray.opacity(0.35)
         #endif
     }
 }
@@ -392,5 +434,34 @@ extension IrisTransaction {
         formatter.dateFormat = "HH:mm:ss"
         
         return formatter.string(from: startedAt)
+    }
+    
+    var irisListTimeText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        
+        return formatter.string(from: startedAt)
+    }
+    
+    var irisListDurationText: String {
+        guard let duration else {
+            return "-"
+        }
+        
+        return String(format: "%.2f", duration)
+    }
+    
+    var irisContentType: String {
+        requestHeaders.firstHeaderValue(named: "Content-Type")
+        ?? responseHeaders.firstHeaderValue(named: "Content-Type")
+        ?? "-"
+    }
+}
+
+extension Dictionary where Key == String, Value == String {
+    func firstHeaderValue(named name: String) -> String? {
+        first { key, _ in
+            key.caseInsensitiveCompare(name) == .orderedSame
+        }?.value
     }
 }

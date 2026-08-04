@@ -18,6 +18,11 @@ public enum Iris {
     nonisolated(unsafe) private static var isURLProtocolRegistered = false
     nonisolated(unsafe) private static var currentGesture: IrisGesture = .shake
     
+    #if canImport(UIKit)
+    nonisolated(unsafe) private static weak var presentedConsoleController: UIViewController?
+    nonisolated(unsafe) private static var isPresentingConsole = false
+    #endif
+    
     public static func start(
         configuration: IrisConfiguration = IrisConfiguration(),
         autoInject: Bool = true
@@ -28,17 +33,35 @@ public enum Iris {
         }
         
         IrisRuntime.shared.start(configuration: configuration)
+        
+        #if canImport(UIKit)
+        Task { @MainActor in
+            IrisUIKitGestureInstaller.apply(selectedGesture())
+        }
+        #endif
     }
     
     public static func stop() {
         IrisRuntime.shared.stop()
         unregisterURLProtocolIfNeeded()
+        
+        #if canImport(UIKit)
+        Task { @MainActor in
+            IrisUIKitGestureInstaller.apply(.custom)
+        }
+        #endif
     }
     
     public static func setGesture(_ gesture: IrisGesture) {
         gestureLock.lock()
         currentGesture = gesture
         gestureLock.unlock()
+        
+        #if canImport(UIKit)
+        Task { @MainActor in
+            IrisUIKitGestureInstaller.apply(gesture)
+        }
+        #endif
     }
     
     static func selectedGesture() -> IrisGesture {
@@ -130,15 +153,26 @@ public enum Iris {
     #if canImport(UIKit)
     @MainActor
     public static func makeConsoleViewController() -> UIViewController {
-        UIHostingController(rootView: IrisConsoleView())
+        IrisConsoleHostingController(rootView: IrisConsoleView())
     }
     
     @MainActor
     public static func present(from presenter: UIViewController) {
-        let controller = makeConsoleViewController()
-        controller.modalPresentationStyle = .pageSheet
+        guard IrisRuntime.shared.snapshot().isEnabled,
+              !isPresentingConsole,
+              presentedConsoleController == nil,
+              !(presenter is IrisConsoleHostingController) else {
+            return
+        }
         
-        presenter.present(controller, animated: true)
+        let controller = makeConsoleViewController()
+        controller.modalPresentationStyle = .fullScreen
+        presentedConsoleController = controller
+        isPresentingConsole = true
+        
+        presenter.present(controller, animated: true) {
+            isPresentingConsole = false
+        }
     }
     
     @MainActor
@@ -148,6 +182,27 @@ public enum Iris {
         }
         
         present(from: presenter)
+    }
+    
+    @MainActor
+    public static func dismiss() {
+        guard let controller = presentedConsoleController else {
+            return
+        }
+        
+        controller.dismiss(animated: true) {
+            markConsoleDismissed(controller)
+        }
+    }
+    
+    @MainActor
+    static func markConsoleDismissed(_ controller: UIViewController) {
+        guard presentedConsoleController === controller else {
+            return
+        }
+        
+        presentedConsoleController = nil
+        isPresentingConsole = false
     }
     
     @MainActor
@@ -183,3 +238,15 @@ public enum Iris {
     }
     #endif
 }
+
+#if canImport(UIKit)
+private final class IrisConsoleHostingController: UIHostingController<IrisConsoleView> {
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        
+        if isBeingDismissed || navigationController?.isBeingDismissed == true {
+            Iris.markConsoleDismissed(self)
+        }
+    }
+}
+#endif

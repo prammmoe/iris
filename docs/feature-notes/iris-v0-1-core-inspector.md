@@ -97,3 +97,41 @@ Branch: `main`
 
 ### Verification
 - `swift test` passed with 17 tests.
+
+## 2026-08-04 - Compact Netfox-Style Rows And Segmented Details
+
+### Changed
+- Restyled request rows to a denser Netfox-like layout with a colored left status/time column and compact URL/method/content-type metadata.
+- Kept existing row information such as status, duration, content type, URL, method, and response size while reducing vertical space.
+- Updated the console header to use a Requests title with compact close and clear icon actions.
+- Reworked transaction detail into segmented Info, Request, and Response views.
+- Info shows URL, method, status, request/response dates, duration, response size, content type, and error when present.
+- Request and Response sections split headers and body under explicit headings.
+
+### Verification
+- `swift test` passed with 17 tests.
+
+## 2026-08-04 - Console Presentation Guard And Detail Layout
+
+### Changed
+- Added a presentation guard so repeated shake/hold/manual calls cannot present duplicate Iris console controllers.
+- Changed console presentation from page sheet to full screen to avoid stacked sheet clipping.
+- Added a Close toolbar action for the full-screen console.
+- Replaced the transaction detail `List` with a custom `ScrollView` layout with explicit top padding, preventing the first rows from being hidden under the navigation bar.
+
+### Verification
+- `swift test` passed with 17 tests.
+
+## 2026-08-04 - UIKit Global Gesture Presentation
+
+### Changed
+- Added a UIKit gesture installer so `Iris.setGesture(.shake)` and `Iris.setGesture(.hold)` can open the console without requiring SwiftUI `.irisConsoleTrigger()`.
+- Added a `UIWindow.motionEnded` hook for shake presentation, matching Netfox's global UIKit behavior.
+- Added automatic long-press recognizer installation on visible and future key windows for `.hold(minimumDuration:)`.
+- `Iris.start()` reapplies the selected gesture and `Iris.stop()` removes hold recognizers; gestures only present while Iris runtime is enabled.
+
+### Stayed The Same
+- `Iris.present()` and SwiftUI `.irisConsoleTrigger()` remain available for manual or per-view presentation.
+
+### Verification
+- `swift test` passed with 17 tests.
