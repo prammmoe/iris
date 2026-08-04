@@ -99,6 +99,9 @@ struct IrisConsoleView: View {
                 transactions = newTransactions
             }
         }
+        #if canImport(UIKit)
+        .navigationViewStyle(.stack)
+        #endif
     }
     
     private var clearButton: some View {
@@ -219,7 +222,7 @@ struct IrisTransactionRowView: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
-                HStack(spacing: 18) {
+                HStack(spacing: 12) {
                     Text(transaction.method)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -231,6 +234,18 @@ struct IrisTransactionRowView: View {
                         .lineLimit(1)
                     
                     Spacer(minLength: 8)
+                    
+                    Text(transaction.irisTimestampText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                
+                HStack(spacing: 12) {
+                    Text(transaction.irisListDurationText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
                     
                     if let byteCount = transaction.responseBody?.count {
                         Text("\(byteCount) B")
@@ -262,25 +277,14 @@ struct IrisTransactionRowView: View {
     }
     
     private var statusColumn: some View {
-        VStack(spacing: 4) {
-            Text(transaction.irisListTimeText)
-                .font(.caption.bold().monospacedDigit())
-                .foregroundColor(.white)
-                .lineLimit(1)
-            
-            Text(transaction.irisListDurationText)
-                .font(.caption.monospacedDigit())
-                .foregroundColor(.white.opacity(0.72))
-                .lineLimit(1)
-            
-            Text(transaction.irisStatusText)
-                .font(.caption2.bold().monospacedDigit())
-                .foregroundColor(.white.opacity(0.9))
-                .lineLimit(1)
-        }
-        .frame(width: 68)
-        .frame(maxHeight: .infinity)
-        .background(transaction.irisStatusColor)
+        Text(transaction.irisStatusText)
+            .font(.headline.bold().monospacedDigit())
+            .foregroundColor(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .frame(width: 68)
+            .frame(maxHeight: .infinity)
+            .background(transaction.irisStatusColor)
     }
 }
 

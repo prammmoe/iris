@@ -135,3 +135,18 @@ Branch: `main`
 
 ### Verification
 - `swift test` passed with 17 tests.
+
+## 2026-08-05 - Status-Only List Badge And Visible Detail Sections
+
+### Changed
+- Changed the compact request row's colored status box to show only the transaction status code, `ERR`, or running placeholder.
+- Moved timestamp and duration into the row metadata area so request context remains visible outside the status box.
+- Moved the detail Info/Request/Response segmented control into a top safe-area inset and forced inline detail navigation title behavior on UIKit.
+- Applied stack navigation style to the console NavigationView on UIKit to avoid clipped/split navigation presentation.
+
+### Bugs And Fixes
+- Bug: Detail content could appear clipped and the Info/Request/Response segmented control could be hidden by the navigation area.
+  Fix: Reworked the detail root into a ScrollView with a safe-area top inset for the segmented control.
+
+### Verification
+- `swift test` passed with 17 tests.

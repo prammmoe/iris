@@ -13,21 +13,23 @@ struct IrisTransactionDetailView: View {
     @State private var selectedSection = IrisTransactionDetailSection.info
     
     var body: some View {
-        VStack(spacing: 0) {
-            sectionPicker
-            
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    selectedContent
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 28)
-                .padding(.bottom, 32)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                selectedContent
             }
-            .background(IrisConsoleColor.detailBackground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+            .padding(.bottom, 32)
+        }
+        .background(IrisConsoleColor.detailBackground)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            sectionPicker
         }
         .navigationTitle("Details")
+        #if canImport(UIKit)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
     
     private var sectionPicker: some View {
@@ -43,7 +45,13 @@ struct IrisTransactionDetailView: View {
         .pickerStyle(.segmented)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
         .background(IrisConsoleColor.detailSegmentBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(IrisConsoleColor.separator)
+                .frame(height: 1)
+        }
     }
     
     @ViewBuilder
