@@ -19,7 +19,7 @@ enum IrisRedactor {
             if redactedNames.contains(name.lowercased()) {
                 result[name] = "<redacted>"
             } else {
-                // Display 
+                // Display
                 result[name] = value
             }
         }

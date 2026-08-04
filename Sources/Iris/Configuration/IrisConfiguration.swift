@@ -15,13 +15,20 @@ public struct IrisConfiguration: Sendable {
     
     public init(
         maxStoredTransactions: Int = 500,
-        maxBodyBytes: Int = 2_000_000, // Max 2 MB per body
+        maxBodyBytes: Int = 1_000_000,
         ignoredHosts: Set<String> = [],
-        redactedHeaders: Set<String> = []
+        redactedHeaders: Set<String> = [
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "x-api-key",
+            "x-signature"
+        ]
     ) {
         self.maxStoredTransactions = maxStoredTransactions
         self.maxBodyBytes = maxBodyBytes
-        self.ignoredHosts = ignoredHosts
+        self.ignoredHosts = Set(ignoredHosts.map { $0.lowercased() })
         self.redactedHeaders = Set(
             redactedHeaders.map { $0.lowercased() }
         )
