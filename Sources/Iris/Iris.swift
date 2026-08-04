@@ -14,7 +14,9 @@ import UIKit
 
 public enum Iris {
     private static let registrationLock = NSLock()
+    private static let gestureLock = NSLock()
     nonisolated(unsafe) private static var isURLProtocolRegistered = false
+    nonisolated(unsafe) private static var currentGesture: IrisGesture = .shake
     
     public static func start(
         configuration: IrisConfiguration = IrisConfiguration(),
@@ -31,6 +33,19 @@ public enum Iris {
     public static func stop() {
         IrisRuntime.shared.stop()
         unregisterURLProtocolIfNeeded()
+    }
+    
+    public static func setGesture(_ gesture: IrisGesture) {
+        gestureLock.lock()
+        currentGesture = gesture
+        gestureLock.unlock()
+    }
+    
+    static func selectedGesture() -> IrisGesture {
+        gestureLock.lock()
+        defer { gestureLock.unlock() }
+        
+        return currentGesture
     }
     
     @discardableResult
@@ -107,6 +122,7 @@ public enum Iris {
         await IrisStore.shared.snapshot()
     }
     
+    @MainActor
     public static func consoleView() -> some View {
         IrisConsoleView()
     }

@@ -7,18 +7,36 @@
 
 import SwiftUI
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 struct IrisConsoleView: View {
     @State private var transactions: [IrisTransaction] = []
     @State private var searchText = ""
+    @State private var selectedCategory = IrisTrafficCategory.main
+    
+    init() {
+        let mainHosts = IrisRuntime.shared.snapshot().configuration.mainHosts
+        _selectedCategory = State(
+            initialValue: mainHosts.isEmpty ? .other : .main
+        )
+    }
+    
+    private var categorizedTransactions: [IrisTransaction] {
+        transactions.filter {
+            $0.irisTrafficCategory == selectedCategory
+        }
+    }
     
     private var filteredTransactions: [IrisTransaction] {
         guard !searchText.isEmpty else {
-            return transactions
+            return categorizedTransactions
         }
         
         let keyword = searchText.lowercased()
         
-        return transactions.filter {
+        return categorizedTransactions.filter {
             $0.url.absoluteString.lowercased().contains(keyword)
             || $0.method.lowercased().contains(keyword)
             || String($0.statusCode ?? 0).contains(keyword)
@@ -27,23 +45,30 @@ struct IrisConsoleView: View {
     
     var body: some View {
         NavigationView {
-            List {
-                Section {
-                    summaryRow
-                }
+            VStack(spacing: 0) {
+                controlsView
                 
-                Section {
-                    ForEach(filteredTransactions) { transaction in
-                        NavigationLink {
-                            IrisTransactionDetailView(transaction: transaction)
-                        } label: {
-                            IrisTransactionRowView(transaction: transaction)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        summaryRow
+                        
+                        if filteredTransactions.isEmpty {
+                            emptyView
+                        } else {
+                            ForEach(filteredTransactions) { transaction in
+                                NavigationLink {
+                                    IrisTransactionDetailView(transaction: transaction)
+                                } label: {
+                                    IrisTransactionRowView(transaction: transaction)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
+                .background(IrisConsoleColor.groupedBackground)
             }
-            .navigationTitle("Iris")
-            .searchable(text: $searchText)
+            .navigationTitle("")
             .toolbar {
                 ToolbarItem {
                     Button("Clear") {
@@ -61,29 +86,78 @@ struct IrisConsoleView: View {
         }
     }
     
+    private var controlsView: some View {
+        VStack(spacing: 10) {
+            searchField
+            
+            Picker(
+                "Category",
+                selection: $selectedCategory
+            ) {
+                ForEach(IrisTrafficCategory.allCases) { category in
+                    Text(category.title)
+                        .tag(category)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(IrisConsoleColor.background)
+    }
+    
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+            
+            TextField("Search URL, method, or status", text: $searchText)
+                .disableAutocorrection(true)
+            
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .font(.body)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .background(IrisConsoleColor.searchBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+    
     private var summaryRow: some View {
         HStack(spacing: 18) {
             summaryItem(
                 title: "All",
-                count: transactions.count
+                count: categorizedTransactions.count
             )
             
             summaryItem(
                 title: "Success",
-                count: transactions.filter { $0.irisStatusKind == .success }.count
+                count: categorizedTransactions.filter { $0.irisStatusKind == .success }.count
             )
             
             summaryItem(
                 title: "Error",
-                count: transactions.filter { $0.irisStatusKind == .error }.count
+                count: categorizedTransactions.filter { $0.irisStatusKind == .error }.count
             )
             
             summaryItem(
                 title: "Running",
-                count: transactions.filter { $0.irisStatusKind == .running }.count
+                count: categorizedTransactions.filter { $0.irisStatusKind == .running }.count
             )
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(IrisConsoleColor.background)
     }
     
     private func summaryItem(title: String, count: Int) -> some View {
@@ -95,6 +169,15 @@ struct IrisConsoleView: View {
             Text(String(count))
                 .font(.headline.monospacedDigit())
         }
+    }
+    
+    private var emptyView: some View {
+        Text("No requests")
+            .font(.callout)
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 36)
+            .background(IrisConsoleColor.background)
     }
 }
 
@@ -142,8 +225,20 @@ struct IrisTransactionRowView: View {
                     }
                 }
             }
+            
+            Image(systemName: "chevron.right")
+                .font(.body.weight(.semibold))
+                .foregroundColor(IrisConsoleColor.disclosure)
+                .padding(.top, 20)
         }
-        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(IrisConsoleColor.background)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .padding(.leading, 84)
+        }
     }
     
     private var statusBadge: some View {
@@ -183,7 +278,78 @@ enum IrisTransactionStatusKind: Equatable {
     case error
 }
 
+enum IrisConsoleColor {
+    static var background: Color {
+        #if canImport(UIKit)
+        return Color(.systemBackground)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .windowBackgroundColor)
+        #else
+        return Color.white
+        #endif
+    }
+    
+    static var groupedBackground: Color {
+        #if canImport(UIKit)
+        return Color(.systemGroupedBackground)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .underPageBackgroundColor)
+        #else
+        return Color.gray.opacity(0.08)
+        #endif
+    }
+    
+    static var searchBackground: Color {
+        #if canImport(UIKit)
+        return Color(.secondarySystemGroupedBackground)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .controlBackgroundColor)
+        #else
+        return Color.gray.opacity(0.12)
+        #endif
+    }
+    
+    static var disclosure: Color {
+        #if canImport(UIKit)
+        return Color(.tertiaryLabel)
+        #elseif canImport(AppKit)
+        return Color(nsColor: .tertiaryLabelColor)
+        #else
+        return Color.gray
+        #endif
+    }
+}
+
+enum IrisTrafficCategory: String, CaseIterable, Identifiable {
+    case main
+    case other
+    
+    var id: String {
+        rawValue
+    }
+    
+    var title: String {
+        switch self {
+        case .main:
+            return "Main"
+        case .other:
+            return "Other"
+        }
+    }
+}
+
 extension IrisTransaction {
+    var irisTrafficCategory: IrisTrafficCategory {
+        let mainHosts = IrisRuntime.shared.snapshot().configuration.mainHosts
+        
+        guard let host = url.host?.lowercased(),
+              mainHosts.contains(host) else {
+            return .other
+        }
+        
+        return .main
+    }
+    
     var irisStatusText: String {
         switch state {
         case .running:

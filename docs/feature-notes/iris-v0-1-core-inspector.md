@@ -54,3 +54,46 @@ Branch: `main`
 
 ### Verification
 - `swift test` passed with 13 tests.
+
+## 2026-08-04 - Global Console Gesture API
+
+### Changed
+- Added public `IrisGesture` cases for `.shake`, `.hold(minimumDuration:)`, and `.custom`.
+- Added `Iris.setGesture(_:)` so apps can configure the console gesture after `Iris.start()`.
+- Updated the SwiftUI `.irisConsoleTrigger()` modifier to use the globally selected Iris gesture by default, while still allowing a per-view override.
+- Added test coverage for global gesture configuration and reset behavior.
+
+### Stayed The Same
+- Shake remains the default gesture.
+- `.custom` leaves presentation to explicit calls such as `Iris.present()` or `Iris.present(from:)`.
+
+### Verification
+- `swift test` passed with 14 tests.
+
+## 2026-08-04 - Request Body Stream Capture And Visible Headers
+
+### Changed
+- Changed default `redactedHeaders` to empty so Iris shows header values by default instead of `<redacted>`.
+- Added `httpBodyStream` capture for POST requests that do not expose `httpBody`, including stream-backed bodies commonly produced by networking libraries.
+- Replaces the consumed request body stream with a new `InputStream(data:)` before forwarding so inspected requests still reach the server with their body.
+- Added tests for visible default headers, optional configured redaction, and stream-backed request body capture/forwarding.
+
+### Stayed The Same
+- Apps can still opt into redaction by passing `IrisConfiguration(redactedHeaders:)`.
+- Body capture remains bounded by `maxBodyBytes`.
+
+### Verification
+- `swift test` passed with 16 tests.
+
+## 2026-08-04 - Console Category And Full-Width Layout
+
+### Changed
+- Removed the visible Iris navigation title from the console and replaced the default searchable navigation UI with a custom always-visible search field.
+- Reworked the console list into full-width summary and request rows instead of inset grouped list containers.
+- Added `IrisTrafficCategory` with Main and Other segmented filtering.
+- Added `mainHosts` and `mainBaseURLs` to `IrisConfiguration`; Main contains requests whose host matches the configured base URL host, while Other contains third-party hosts.
+- Defaulted the selected category to Other when no main hosts are configured, preventing an empty first console view for apps that have not set a base URL.
+- Added test coverage for Main/Other host classification.
+
+### Verification
+- `swift test` passed with 17 tests.

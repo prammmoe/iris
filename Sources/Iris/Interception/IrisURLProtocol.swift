@@ -10,6 +10,7 @@ import Foundation
 final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
     private static let handledKey = "com.iris.request-handled"
     private static let forwardingLock = NSLock()
+    private static let streamBufferSize = 16 * 1_024
     nonisolated(unsafe) private static var forwardingProtocolClassesForTesting: [AnyClass] = []
     
     private var session: URLSession?
@@ -90,19 +91,18 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
         
         URLProtocol.setProperty(true, forKey: Self.handledKey, in: mutableRequest)
         
-        let outgoingRequest = mutableRequest as URLRequest
         let runtime = IrisRuntime.shared.snapshot()
         let configuration = runtime.configuration
         let transactionID = UUID()
+        let capturedBody = Self.captureBody(
+            from: mutableRequest,
+            maximumBytes: configuration.maxBodyBytes
+        )
+        let outgoingRequest = mutableRequest as URLRequest
         
         let requestHeaders = IrisRedactor.headers(
             outgoingRequest.allHTTPHeaderFields ?? [:],
             redactedNames: configuration.redactedHeaders
-        )
-        
-        let requestBody = Self.truncate(
-            outgoingRequest.httpBody,
-            maximumBytes: configuration.maxBodyBytes
         )
         
         let transaction = IrisTransaction(
@@ -110,7 +110,7 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
             method: outgoingRequest.httpMethod ?? "GET",
             url: url,
             requestHeaders: requestHeaders,
-            requestBody: requestBody
+            requestBody: capturedBody
         )
         
         insertTask = Task {
@@ -204,5 +204,57 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
         }
         
         return Data(data.prefix(maximumBytes))
+    }
+    
+    static func captureBody(
+        from request: NSMutableURLRequest,
+        maximumBytes: Int
+    ) -> Data? {
+        if let body = request.httpBody {
+            return truncate(body, maximumBytes: maximumBytes)
+        }
+        
+        guard let bodyStream = request.httpBodyStream,
+              let data = read(bodyStream, maximumBytes: maximumBytes) else {
+            return nil
+        }
+        
+        request.httpBodyStream = InputStream(data: data)
+        return data
+    }
+    
+    private static func read(
+        _ inputStream: InputStream,
+        maximumBytes: Int
+    ) -> Data? {
+        var data = Data()
+        var buffer = [UInt8](
+            repeating: 0,
+            count: streamBufferSize
+        )
+        
+        inputStream.open()
+        defer { inputStream.close() }
+        
+        while inputStream.hasBytesAvailable {
+            let remainingByteCount = maximumBytes - data.count
+            
+            guard remainingByteCount > 0 else {
+                break
+            }
+            
+            let byteCount = inputStream.read(
+                &buffer,
+                maxLength: min(buffer.count, remainingByteCount)
+            )
+            
+            guard byteCount > 0 else {
+                break
+            }
+            
+            data.append(buffer, count: byteCount)
+        }
+        
+        return data.isEmpty ? nil : data
     }
 }

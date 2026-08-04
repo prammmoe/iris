@@ -35,7 +35,7 @@ struct IrisTests {
         #expect(IrisURLProtocol.canInit(with: request("https://api.example.com")))
     }
     
-    @Test func defaultSensitiveHeadersAreRedacted() {
+    @Test func headersAreVisibleByDefault() {
         let redacted = IrisRedactor.headers(
             [
                 "Authorization": "Bearer token",
@@ -43,6 +43,21 @@ struct IrisTests {
                 "Content-Type": "application/json"
             ],
             redactedNames: IrisConfiguration().redactedHeaders
+        )
+        
+        #expect(redacted["Authorization"] == "Bearer token")
+        #expect(redacted["Cookie"] == "session=abc")
+        #expect(redacted["Content-Type"] == "application/json")
+    }
+    
+    @Test func configuredSensitiveHeadersAreRedacted() {
+        let redacted = IrisRedactor.headers(
+            [
+                "Authorization": "Bearer token",
+                "Cookie": "session=abc",
+                "Content-Type": "application/json"
+            ],
+            redactedNames: ["authorization", "cookie"]
         )
         
         #expect(redacted["Authorization"] == "<redacted>")
@@ -127,9 +142,56 @@ struct IrisTests {
         #expect(transaction.method == "POST")
         #expect(transaction.statusCode == 201)
         #expect(transaction.duration != nil)
-        #expect(transaction.requestHeaders["Authorization"] == "<redacted>")
-        #expect(transaction.responseHeaders["Set-Cookie"] == "<redacted>")
+        #expect(transaction.requestHeaders["Authorization"] == "Bearer token")
+        #expect(transaction.responseHeaders["Set-Cookie"] == "session=abc")
         #expect(transaction.responseBody == Data("abcd".utf8))
+    }
+    
+    @Test func httpBodyStreamIsCapturedAndForwarded() async throws {
+        await resetIris()
+        
+        StubURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let requestBody = request.httpBody ?? readStream(request.httpBodyStream)
+            
+            return (response, requestBody ?? Data())
+        }
+        
+        IrisURLProtocol.setForwardingProtocolClassesForTesting([StubURLProtocol.self])
+        Iris.start()
+        
+        let body = Data(#"{"email":"test@example.com","password":"secret"}"#.utf8)
+        let mutableRequest = NSMutableURLRequest(url: URL(string: "https://example.com/stream")!)
+        mutableRequest.httpMethod = "POST"
+        mutableRequest.httpBodyStream = InputStream(data: body)
+        mutableRequest.setValue(
+            String(body.count),
+            forHTTPHeaderField: "Content-Length"
+        )
+        mutableRequest.setValue(
+            "application/json",
+            forHTTPHeaderField: "Content-Type"
+        )
+        
+        let session = URLSession(configuration: URLSessionConfiguration.ephemeral)
+        let (data, response) = try await session.data(for: mutableRequest as URLRequest)
+        session.invalidateAndCancel()
+        
+        #expect(data == body)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        
+        let transactions = await eventuallyRecordedTransactions { transactions in
+            transactions.first?.url.absoluteString == "https://example.com/stream"
+            && transactions.first?.state == .completed
+        }
+        let transaction = try #require(transactions.first)
+        
+        #expect(transaction.requestBody == body)
     }
     
     @Test func autoInjectedSessionRecordsRequestWithoutInstrument() async throws {
@@ -264,10 +326,60 @@ struct IrisTests {
         #expect(failed.irisStatusText == "ERR")
         #expect(failed.irisStatusKind == .error)
     }
+    
+    @Test func trafficCategoryUsesConfiguredMainHostsAndBaseURLs() async throws {
+        await resetIris()
+        
+        Iris.start(
+            configuration: IrisConfiguration(
+                mainHosts: ["API.EXAMPLE.com"],
+                mainBaseURLs: [URL(string: "https://service.example.com/v1")!]
+            )
+        )
+        
+        let mainFromHost = IrisTransaction(
+            method: "GET",
+            url: URL(string: "https://api.example.com/users")!,
+            requestHeaders: [:],
+            requestBody: nil
+        )
+        let mainFromBaseURL = IrisTransaction(
+            method: "GET",
+            url: URL(string: "https://service.example.com/orders")!,
+            requestHeaders: [:],
+            requestBody: nil
+        )
+        let other = IrisTransaction(
+            method: "GET",
+            url: URL(string: "https://analytics.example.net/log")!,
+            requestHeaders: [:],
+            requestBody: nil
+        )
+        
+        #expect(mainFromHost.irisTrafficCategory == .main)
+        #expect(mainFromBaseURL.irisTrafficCategory == .main)
+        #expect(other.irisTrafficCategory == .other)
+    }
+    
+    @Test func gestureCanBeConfiguredGlobally() async throws {
+        await resetIris()
+        
+        #expect(Iris.selectedGesture() == .shake)
+        
+        Iris.setGesture(.hold(minimumDuration: 1.2))
+        #expect(Iris.selectedGesture() == .hold(minimumDuration: 1.2))
+        
+        Iris.setGesture(.custom)
+        #expect(Iris.selectedGesture() == .custom)
+        
+        Iris.setGesture(.shake)
+        #expect(Iris.selectedGesture() == .shake)
+    }
 }
 
 private func resetIris() async {
     Iris.stop()
+    Iris.setGesture(.shake)
     IrisURLProtocol.setForwardingProtocolClassesForTesting([])
     StubURLProtocol.handler = nil
     await IrisStore.shared.clear()
@@ -292,6 +404,33 @@ private func countIrisProtocol(
     (configuration.protocolClasses ?? []).filter {
         ObjectIdentifier($0) == ObjectIdentifier(IrisURLProtocol.self)
     }.count
+}
+
+private func readStream(_ inputStream: InputStream?) -> Data? {
+    guard let inputStream else {
+        return nil
+    }
+    
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 1_024)
+    
+    inputStream.open()
+    defer { inputStream.close() }
+    
+    while inputStream.hasBytesAvailable {
+        let byteCount = inputStream.read(
+            &buffer,
+            maxLength: buffer.count
+        )
+        
+        guard byteCount > 0 else {
+            break
+        }
+        
+        data.append(buffer, count: byteCount)
+    }
+    
+    return data
 }
 
 private func eventuallyRecordedTransactions(

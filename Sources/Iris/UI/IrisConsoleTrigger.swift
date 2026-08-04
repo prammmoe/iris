@@ -7,9 +7,10 @@
 
 import SwiftUI
 
-public enum IrisConsoleTrigger: Sendable, Equatable {
+public enum IrisGesture: Sendable, Equatable {
     case shake
-    case longPress(minimumDuration: Double = 0.8)
+    case hold(minimumDuration: Double = 0.8)
+    case custom
 }
 
 #if canImport(UIKit)
@@ -17,21 +18,21 @@ import UIKit
 
 public extension View {
     func irisConsoleTrigger(
-        _ trigger: IrisConsoleTrigger = .shake
+        _ gesture: IrisGesture? = nil
     ) -> some View {
-        modifier(IrisConsoleTriggerModifier(trigger: trigger))
+        modifier(IrisConsoleTriggerModifier(gesture: gesture))
     }
 }
 
 private struct IrisConsoleTriggerModifier: ViewModifier {
-    let trigger: IrisConsoleTrigger
+    let gesture: IrisGesture?
     
     func body(content: Content) -> some View {
-        switch trigger {
+        switch gesture ?? Iris.selectedGesture() {
         case .shake:
             content
                 .background(IrisShakeDetector())
-        case let .longPress(minimumDuration):
+        case let .hold(minimumDuration):
             content
                 .simultaneousGesture(
                     LongPressGesture(minimumDuration: minimumDuration)
@@ -41,6 +42,8 @@ private struct IrisConsoleTriggerModifier: ViewModifier {
                             }
                         }
                 )
+        case .custom:
+            content
         }
     }
 }
@@ -80,7 +83,8 @@ private final class ShakeDetectingView: UIView {
         _ motion: UIEvent.EventSubtype,
         with event: UIEvent?
     ) {
-        guard motion == .motionShake else {
+        guard motion == .motionShake,
+              Iris.selectedGesture() == .shake else {
             return
         }
         
