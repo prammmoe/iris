@@ -150,3 +150,14 @@ Branch: `main`
 
 ### Verification
 - `swift test` passed with 17 tests.
+
+## 2026-08-05 - Detail Section Cards And Export Actions
+
+### Changed
+- Kept the Info, Request, and Response segmented detail control while changing each tab's content into section title plus rounded card containers.
+- Added divider-separated field rows inside Info and header sections while preserving the existing field font size and blue label styling.
+- Added a top-right share menu with Copy cURL and Export as `.txt` actions.
+- Added text export formatting that includes Info, Request headers/body, and Response headers/body.
+
+### Verification
+- `swift test` passed with 17 tests.
