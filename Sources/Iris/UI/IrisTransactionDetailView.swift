@@ -144,11 +144,11 @@ struct IrisTransactionDetailView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("[\(title)]")
-                .font(.body)
+                .font(.callout)
                 .foregroundColor(.blue)
             
             Text(value)
-                .font(.body)
+                .font(.callout)
                 .foregroundColor(.primary)
                 .textSelection(.enabled)
         }
@@ -215,7 +215,7 @@ struct IrisTransactionDetailView: View {
         _ data: Data?
     ) -> some View {
         Text(IrisBodyFormatter.string(from: data))
-            .font(.body.monospaced())
+            .font(.callout.monospaced())
             .foregroundColor(.primary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -266,7 +266,7 @@ private struct IrisActivityView: UIViewControllerRepresentable {
 }
 #endif
 
-private enum IrisClipboard {
+enum IrisClipboard {
     static func copy(_ text: String) {
         #if canImport(UIKit)
         UIPasteboard.general.string = text
@@ -274,6 +274,30 @@ private enum IrisClipboard {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         #endif
+    }
+}
+
+extension IrisTransaction {
+    var irisCurlText: String {
+        var components = [
+            "curl",
+            "-X \(method.shellQuotedForIris)",
+            url.absoluteString.shellQuotedForIris
+        ]
+        
+        for key in requestHeaders.keys.sorted() {
+            components.append(
+                "-H \("\(key): \(requestHeaders[key] ?? "")".shellQuotedForIris)"
+            )
+        }
+        
+        if let requestBody {
+            components.append(
+                "--data-binary \(IrisBodyFormatter.string(from: requestBody).shellQuotedForIris)"
+            )
+        }
+        
+        return components.joined(separator: " \\\n  ")
     }
 }
 
@@ -297,28 +321,6 @@ private extension IrisTransaction {
         }
         
         return fields
-    }
-    
-    var irisCurlText: String {
-        var components = [
-            "curl",
-            "-X \(method.shellQuotedForIris)",
-            url.absoluteString.shellQuotedForIris
-        ]
-        
-        for key in requestHeaders.keys.sorted() {
-            components.append(
-                "-H \("\(key): \(requestHeaders[key] ?? "")".shellQuotedForIris)"
-            )
-        }
-        
-        if let requestBody {
-            components.append(
-                "--data-binary \(IrisBodyFormatter.string(from: requestBody).shellQuotedForIris)"
-            )
-        }
-        
-        return components.joined(separator: " \\\n  ")
     }
     
     var irisExportText: String {

@@ -16,6 +16,11 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
     private var session: URLSession?
     private var dataTask: URLSessionDataTask?
     private var insertTask: Task<Void, Never>?
+    private var transactionID: UUID?
+    private var configuration: IrisConfiguration?
+    private var responseStatusCode: Int?
+    private var responseHeaders: [String: String] = [:]
+    private var responseBody = Data()
     
     override class func canInit(with request: URLRequest) -> Bool {
         canServe(request)
@@ -94,6 +99,10 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
         let runtime = IrisRuntime.shared.snapshot()
         let configuration = runtime.configuration
         let transactionID = UUID()
+        
+        self.configuration = configuration
+        self.transactionID = transactionID
+        
         let capturedBody = Self.captureBody(
             from: mutableRequest,
             maximumBytes: configuration.maxBodyBytes
@@ -123,66 +132,14 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
         let forwardingConfiguration = URLSessionConfiguration.ephemeral
         forwardingConfiguration.protocolClasses = Self.forwardingProtocolClasses()
         
-        let forwardingSession = URLSession(configuration: forwardingConfiguration)
+        let forwardingSession = URLSession(
+            configuration: forwardingConfiguration,
+            delegate: self,
+            delegateQueue: nil
+        )
         session = forwardingSession
         
-        dataTask = forwardingSession.dataTask(with: outgoingRequest) { [weak self] data, response, error in
-            guard let self else {
-                return
-            }
-            
-            let statusCode = (response as? HTTPURLResponse)?.statusCode
-            let rawResponseHeaders: [String: String]
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                rawResponseHeaders = httpResponse.allHeaderFields.reduce(into: [:]) { result, item in
-                    result[String(describing: item.key)] = String(describing: item.value)
-                }
-            } else {
-                rawResponseHeaders = [:]
-            }
-            
-            let responseHeaders = IrisRedactor.headers(
-                rawResponseHeaders,
-                redactedNames: configuration.redactedHeaders
-            )
-            
-            let responseBody = Self.truncate(data, maximumBytes: configuration.maxBodyBytes)
-            let insertion = self.insertTask
-            
-            Task {
-                await insertion?.value
-                
-                await IrisStore.shared.complete(
-                    id: transactionID,
-                    statusCode: statusCode,
-                    responseHeaders: responseHeaders,
-                    responseBody: responseBody,
-                    errorDescription: error?.localizedDescription
-                )
-            }
-            
-            if let response {
-                self.client?.urlProtocol(
-                    self,
-                    didReceive: response,
-                    cacheStoragePolicy: .notAllowed
-                )
-            }
-            
-            if let data {
-                self.client?.urlProtocol(self, didLoad: data)
-            }
-            
-            if let error {
-                self.client?.urlProtocol(self, didFailWithError: error)
-            } else {
-                self.client?.urlProtocolDidFinishLoading(self)
-            }
-            
-            forwardingSession.finishTasksAndInvalidate()
-        }
-        
+        dataTask = forwardingSession.dataTask(with: outgoingRequest)
         dataTask?.resume()
     }
     
@@ -256,5 +213,128 @@ final class IrisURLProtocol: URLProtocol, @unchecked Sendable {
         }
         
         return data.isEmpty ? nil : data
+    }
+}
+
+extension IrisURLProtocol: URLSessionDataDelegate {
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let statusCode = (response as? HTTPURLResponse)?.statusCode
+        let responseHeaders = redactedHeaders(from: response)
+        
+        responseStatusCode = statusCode
+        self.responseHeaders = responseHeaders
+        
+        updateStoredResponse()
+        
+        client?.urlProtocol(
+            self,
+            didReceive: response,
+            cacheStoragePolicy: .notAllowed
+        )
+        
+        completionHandler(.allow)
+    }
+    
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        appendResponseBody(data)
+        updateStoredResponse()
+        
+        client?.urlProtocol(self, didLoad: data)
+    }
+    
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        let responseBody = responseBody.isEmpty ? nil : responseBody
+        let insertion = insertTask
+        let transactionID = transactionID
+        let statusCode = responseStatusCode
+        let responseHeaders = responseHeaders
+        
+        Task {
+            await insertion?.value
+            
+            if let transactionID {
+                await IrisStore.shared.complete(
+                    id: transactionID,
+                    statusCode: statusCode,
+                    responseHeaders: responseHeaders,
+                    responseBody: responseBody,
+                    errorDescription: error?.localizedDescription
+                )
+            }
+        }
+        
+        if let error {
+            client?.urlProtocol(self, didFailWithError: error)
+        } else {
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        
+        session.finishTasksAndInvalidate()
+    }
+    
+    private func appendResponseBody(_ data: Data) {
+        guard let configuration else {
+            return
+        }
+        
+        let remainingByteCount = configuration.maxBodyBytes - responseBody.count
+        
+        guard remainingByteCount > 0 else {
+            return
+        }
+        
+        responseBody.append(
+            data.prefix(remainingByteCount)
+        )
+    }
+    
+    private func updateStoredResponse() {
+        let insertion = insertTask
+        let transactionID = transactionID
+        let statusCode = responseStatusCode
+        let responseHeaders = responseHeaders
+        let responseBody = responseBody.isEmpty ? nil : responseBody
+        
+        Task {
+            await insertion?.value
+            
+            if let transactionID {
+                await IrisStore.shared.updateResponse(
+                    id: transactionID,
+                    statusCode: statusCode,
+                    responseHeaders: responseHeaders,
+                    responseBody: responseBody
+                )
+            }
+        }
+    }
+    
+    private func redactedHeaders(from response: URLResponse) -> [String: String] {
+        guard let configuration,
+              let httpResponse = response as? HTTPURLResponse else {
+            return [:]
+        }
+        
+        let rawResponseHeaders = httpResponse.allHeaderFields.reduce(into: [:]) { result, item in
+            result[String(describing: item.key)] = String(describing: item.value)
+        }
+        
+        return IrisRedactor.headers(
+            rawResponseHeaders,
+            redactedNames: configuration.redactedHeaders
+        )
     }
 }

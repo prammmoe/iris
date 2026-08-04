@@ -65,6 +65,23 @@ actor IrisStore {
         broadcast()
     }
     
+    func updateResponse(
+        id: UUID,
+        statusCode: Int?,
+        responseHeaders: [String: String],
+        responseBody: Data?
+    ) {
+        guard let index = transactions.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        
+        transactions[index].statusCode = statusCode
+        transactions[index].responseHeaders = responseHeaders
+        transactions[index].responseBody = responseBody
+        
+        broadcast()
+    }
+    
     func clear() {
         transactions.removeAll()
         broadcast()

@@ -161,3 +161,17 @@ Branch: `main`
 
 ### Verification
 - `swift test` passed with 17 tests.
+
+## 2026-08-05 - SSE Metadata And Console Usability Polish
+
+### Changed
+- Reduced detail field and body text size inside Info, Request, and Response section cards.
+- Removed the console statistics row from the request list.
+- Added long-press copy cURL support on request rows.
+- Changed URLProtocol forwarding to a URLSession delegate flow so response status and headers are recorded as soon as they arrive, including long-lived `text/event-stream` SSE requests.
+- Running requests now show the received HTTP status code when one is available instead of always showing the running placeholder.
+- Reset search text when clearing the console and added coverage that observers continue receiving inserts after clear.
+- Added a console navigation bar configurator so top title text remains visible against the app's navigation appearance.
+
+### Verification
+- `swift test` passed with 19 tests.

@@ -101,6 +101,30 @@ struct IrisTests {
         #expect(await IrisStore.shared.snapshot().isEmpty)
     }
     
+    @Test func observerContinuesAfterClear() async throws {
+        await resetIris()
+        
+        let stream = await IrisStore.shared.observe()
+        var iterator = stream.makeAsyncIterator()
+        
+        #expect(await iterator.next()?.isEmpty == true)
+        
+        await IrisStore.shared.insert(
+            transaction(index: 0),
+            maxStoredTransactions: 10
+        )
+        #expect(await iterator.next()?.count == 1)
+        
+        await IrisStore.shared.clear()
+        #expect(await iterator.next()?.isEmpty == true)
+        
+        await IrisStore.shared.insert(
+            transaction(index: 1),
+            maxStoredTransactions: 10
+        )
+        #expect(await iterator.next()?.first?.method == "POST-1")
+    }
+    
     @Test func successfulRequestIsRecorded() async throws {
         await resetIris()
         
@@ -325,6 +349,17 @@ struct IrisTests {
         #expect(serverError.irisStatusKind == .error)
         #expect(failed.irisStatusText == "ERR")
         #expect(failed.irisStatusKind == .error)
+    }
+    
+    @Test func runningResponseMetadataShowsStatusAndEventStream() throws {
+        var eventStream = transaction(index: 0)
+        eventStream.statusCode = 200
+        eventStream.responseHeaders = ["Content-Type": "text/event-stream"]
+        eventStream.state = .running
+        
+        #expect(eventStream.irisStatusText == "200")
+        #expect(eventStream.irisStatusKind == .success)
+        #expect(eventStream.irisContentType == "text/event-stream")
     }
     
     @Test func trafficCategoryUsesConfiguredMainHostsAndBaseURLs() async throws {

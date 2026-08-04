@@ -7,7 +7,9 @@
 
 import SwiftUI
 
-#if canImport(AppKit)
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
 import AppKit
 #endif
 
@@ -50,8 +52,6 @@ struct IrisConsoleView: View {
                 
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        summaryRow
-                        
                         if filteredTransactions.isEmpty {
                             emptyView
                         } else {
@@ -62,6 +62,12 @@ struct IrisConsoleView: View {
                                     IrisTransactionRowView(transaction: transaction)
                                 }
                                 .buttonStyle(.plain)
+                                .simultaneousGesture(
+                                    LongPressGesture(minimumDuration: 0.55)
+                                        .onEnded { _ in
+                                            IrisClipboard.copy(transaction.irisCurlText)
+                                        }
+                                )
                             }
                         }
                     }
@@ -91,6 +97,9 @@ struct IrisConsoleView: View {
                 }
                 #endif
             }
+            #if canImport(UIKit)
+            .background(IrisNavigationBarConfigurator())
+            #endif
         }
         .task {
             let stream = await IrisStore.shared.observe()
@@ -106,6 +115,7 @@ struct IrisConsoleView: View {
     
     private var clearButton: some View {
         Button {
+            searchText = ""
             Iris.clear()
         } label: {
             Image(systemName: "trash")
@@ -157,45 +167,6 @@ struct IrisConsoleView: View {
         .frame(height: 44)
         .background(IrisConsoleColor.searchBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-    
-    private var summaryRow: some View {
-        HStack(spacing: 18) {
-            summaryItem(
-                title: "All",
-                count: categorizedTransactions.count
-            )
-            
-            summaryItem(
-                title: "Success",
-                count: categorizedTransactions.filter { $0.irisStatusKind == .success }.count
-            )
-            
-            summaryItem(
-                title: "Error",
-                count: categorizedTransactions.filter { $0.irisStatusKind == .error }.count
-            )
-            
-            summaryItem(
-                title: "Running",
-                count: categorizedTransactions.filter { $0.irisStatusKind == .running }.count
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(IrisConsoleColor.background)
-    }
-    
-    private func summaryItem(title: String, count: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            Text(String(count))
-                .font(.headline.monospacedDigit())
-        }
     }
     
     private var emptyView: some View {
@@ -399,7 +370,7 @@ extension IrisTransaction {
     var irisStatusText: String {
         switch state {
         case .running:
-            return "..."
+            return statusCode.map(String.init) ?? "..."
         case .completed:
             return statusCode.map(String.init) ?? "-"
         case .failed:
@@ -410,6 +381,10 @@ extension IrisTransaction {
     var irisStatusKind: IrisTransactionStatusKind {
         switch state {
         case .running:
+            if let statusCode {
+                return (200..<400).contains(statusCode) ? .success : .error
+            }
+            
             return .running
         case .failed:
             return .error
@@ -461,6 +436,45 @@ extension IrisTransaction {
         ?? "-"
     }
 }
+
+#if canImport(UIKit)
+private struct IrisNavigationBarConfigurator: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+    
+    func updateUIViewController(
+        _ uiViewController: Controller,
+        context: Context
+    ) {
+        uiViewController.applyNavigationAppearance()
+    }
+    
+    final class Controller: UIViewController {
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            applyNavigationAppearance()
+        }
+        
+        func applyNavigationAppearance() {
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = .systemBackground
+            appearance.titleTextAttributes = [
+                .foregroundColor: UIColor.label
+            ]
+            appearance.largeTitleTextAttributes = [
+                .foregroundColor: UIColor.label
+            ]
+            
+            navigationController?.navigationBar.standardAppearance = appearance
+            navigationController?.navigationBar.scrollEdgeAppearance = appearance
+            navigationController?.navigationBar.compactAppearance = appearance
+            navigationController?.navigationBar.tintColor = .systemBlue
+        }
+    }
+}
+#endif
 
 extension Dictionary where Key == String, Value == String {
     func firstHeaderValue(named name: String) -> String? {
